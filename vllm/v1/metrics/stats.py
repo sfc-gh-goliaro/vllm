@@ -38,7 +38,7 @@ class SchedulerStats:
         default_factory=PrefixCacheStats)
 
     spec_decoding_stats: Optional[SpecDecodingStats] = None
-    finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
+    finished_requests_spec_stats: list[FinishedRequestSpecStats] = field(default_factory=list)
 
 
 @dataclass
@@ -67,8 +67,8 @@ class RequestStateStats:
 class FinishedRequestStats:
     """Stats associated with a finished request."""
 
-    request_id: str = ""
     finish_reason: "FinishReason"
+    request_id: str = ""
     e2e_latency: float = 0.0
     num_prompt_tokens: int = 0
     num_generation_tokens: int = 0
@@ -170,8 +170,8 @@ class IterationStats:
         inference_time = req_stats.last_token_ts - req_stats.scheduled_ts
 
         finished_req = \
-            FinishedRequestStats(request_id=request_id,
-                                 finish_reason=finish_reason,
+            FinishedRequestStats(finish_reason=finish_reason,
+                                 request_id=request_id,
                                  e2e_latency=e2e_latency,
                                  num_prompt_tokens=num_prompt_tokens,
                                  num_generation_tokens=req_stats.num_generation_tokens,

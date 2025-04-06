@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -30,8 +30,8 @@ class SpecDecodingStats:
 
 @dataclass
 class SpecDecodingReqStats:
-    num_draft_tokens: list[int] = []
-    num_accepted_tokens: list[int] = []
+    num_draft_tokens: list[int] = field(default_factory=list)
+    num_accepted_tokens: list[int] = field(default_factory=list)
     
 
 @dataclass

@@ -41,7 +41,7 @@ class LoggingStatLogger(StatLoggerBase):
         # TODO: Make the interval configurable.
         self.prefix_caching_metrics = PrefixCachingMetrics()
         self.spec_decoding_metrics = SpecDecodingMetrics()
-        self.finished_requests = list[FinishedRequestStats] = []
+        self.finished_requests: list[FinishedRequestStats] = []
         self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
     def _reset(self, now):
