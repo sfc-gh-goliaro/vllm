@@ -109,8 +109,8 @@ class LoggingStatLogger(StatLoggerBase):
             scheduler_stats.gpu_cache_usage * 100,
             self.prefix_caching_metrics.hit_rate * 100,
         )
-        logger.info("Finished requests: ", finished_requests)
-        logger.info("Finished requests spec stats: ", finished_requests_spec_stats)
+        logger.info("Finished requests: %s", finished_requests)
+        logger.info("Finished requests spec stats: %s", finished_requests_spec_stats)
 
         if scheduler_stats.spec_decoding_stats is not None:
             self.spec_decoding_metrics.log()
