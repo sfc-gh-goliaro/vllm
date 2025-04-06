@@ -23,7 +23,7 @@ from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
-from vllm.v1.spec_decode.metrics import SpecDecodingStats
+from vllm.v1.spec_decode.metrics import SpecDecodingStats, FinishedRequestSpecStats, SpecDecodingReqStats
 from vllm.v1.structured_output import StructuredOutputManager
 
 logger = init_logger(__name__)
@@ -111,6 +111,8 @@ class Scheduler(SchedulerInterface):
         # for these models.
         self.encoder_cache_manager = EncoderCacheManager(
             cache_size=encoder_cache_size)
+    
+        self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
     def schedule(self) -> SchedulerOutput:
         # NOTE(woosuk) on the scheduling algorithm:
@@ -589,6 +591,11 @@ class Scheduler(SchedulerInterface):
                     spec_decoding_stats,
                     num_draft_tokens=len(scheduled_spec_token_ids),
                     num_accepted_tokens=len(generated_token_ids) - 1)
+                
+                if request.spec_decoding_stats is None:
+                    request.spec_decoding_stats = SpecDecodingReqStats()
+                request.spec_decoding_stats.num_draft_tokens.append(len(scheduled_spec_token_ids))
+                request.spec_decoding_stats.num_accepted_tokens.append(len(generated_token_ids) - 1)
 
             cached_encoder_input_ids = (
                 self.encoder_cache_manager.get_cached_input_ids(request))
@@ -622,6 +629,7 @@ class Scheduler(SchedulerInterface):
                 # This must be called before we make the EngineCoreOutput.
                 stopped = check_stop(request, self.max_model_len)
                 if stopped:
+                    self._update_finished_requests_spec_stats(request)
                     self._free_request(request)
                     del new_token_ids[num_new:]  # Trim new tokens if needed.
                     break
@@ -706,7 +714,20 @@ class Scheduler(SchedulerInterface):
             else:
                 self.waiting.remove(request)
             request.status = finished_status
+            self._update_finished_requests_spec_stats(request)
             self._free_request(request)
+
+    def _update_finished_requests_spec_stats(self, request: Request) -> None:
+        if request.spec_decoding_stats is not None:
+            assert len(request.spec_decoding_stats.num_draft_tokens) == len(request.spec_decoding_stats.num_accepted_tokens)
+            self.finished_requests_spec_stats.append(
+                FinishedRequestSpecStats(
+                    request_id=request.request_id or "",
+                    num_draft_tokens=sum(request.spec_decoding_stats.num_draft_tokens),
+                    num_accepted_tokens=sum(request.spec_decoding_stats.num_accepted_tokens),
+                    num_steps=len(request.spec_decoding_stats.num_draft_tokens) or 0,
+                )
+            )
 
     def _free_request(self, request: Request) -> None:
         assert request.is_finished()
@@ -736,13 +757,17 @@ class Scheduler(SchedulerInterface):
     ) -> Optional[SchedulerStats]:
         if not self.log_stats:
             return None
-        return SchedulerStats(
+        
+        scheduler_stats = SchedulerStats(
             num_running_reqs=len(self.running),
             num_waiting_reqs=len(self.waiting),
             gpu_cache_usage=self.kv_cache_manager.usage,
             prefix_cache_stats=self.kv_cache_manager.make_prefix_cache_stats(),
             spec_decoding_stats=spec_decoding_stats,
+            finished_requests_spec_stats = self.finished_requests_spec_stats.copy()  # type: ignore[assignment]
         )
+        self.finished_requests_spec_stats.clear()
+        return scheduler_stats
 
     def make_spec_decoding_stats(
         self,

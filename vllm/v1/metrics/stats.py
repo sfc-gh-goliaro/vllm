@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
-from vllm.v1.spec_decode.metrics import SpecDecodingStats
+from vllm.v1.spec_decode.metrics import SpecDecodingStats, FinishedRequestSpecStats
 
 if TYPE_CHECKING:
     from vllm.v1.engine import EngineCoreEvent, EngineCoreOutput, FinishReason
@@ -38,6 +38,7 @@ class SchedulerStats:
         default_factory=PrefixCacheStats)
 
     spec_decoding_stats: Optional[SpecDecodingStats] = None
+    finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
 
 @dataclass
@@ -66,6 +67,7 @@ class RequestStateStats:
 class FinishedRequestStats:
     """Stats associated with a finished request."""
 
+    request_id: str = ""
     finish_reason: "FinishReason"
     e2e_latency: float = 0.0
     num_prompt_tokens: int = 0
@@ -145,7 +147,8 @@ class IterationStats:
                 self.num_preempted_reqs += 1
                 LoRARequestStates.preempted_request(lora_stats, req_id)
 
-    def update_from_finished_request(self, finish_reason: "FinishReason",
+    def update_from_finished_request(self, request_id: str,
+                                     finish_reason: "FinishReason",
                                      num_prompt_tokens: int,
                                      max_tokens_param: Optional[int],
                                      req_stats: RequestStateStats):
@@ -167,7 +170,8 @@ class IterationStats:
         inference_time = req_stats.last_token_ts - req_stats.scheduled_ts
 
         finished_req = \
-            FinishedRequestStats(finish_reason=finish_reason,
+            FinishedRequestStats(request_id=request_id,
+                                 finish_reason=finish_reason,
                                  e2e_latency=e2e_latency,
                                  num_prompt_tokens=num_prompt_tokens,
                                  num_generation_tokens=req_stats.num_generation_tokens,

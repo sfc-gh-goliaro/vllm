@@ -28,6 +28,21 @@ class SpecDecodingStats:
         self.num_draft_tokens += num_draft_tokens
         self.num_accepted_tokens += num_accepted_tokens
 
+@dataclass
+class SpecDecodingReqStats:
+    num_draft_tokens: list[int] = []
+    num_accepted_tokens: list[int] = []
+    
+
+@dataclass
+class FinishedRequestSpecStats:
+    """Speculation Stats associated with a finished request."""
+
+    request_id: str = ""
+    num_draft_tokens: int = 0
+    num_accepted_tokens: int = 0
+    num_steps: int = 0
+    
 
 class SpecDecodingMetrics:
 
