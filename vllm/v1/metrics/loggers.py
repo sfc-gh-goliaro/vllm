@@ -11,8 +11,9 @@ from vllm.config import SupportsMetricsInfo, VllmConfig
 from vllm.logger import init_logger
 from vllm.v1.core.kv_cache_utils import PrefixCachingMetrics
 from vllm.v1.engine import FinishReason
-from vllm.v1.metrics.stats import IterationStats, SchedulerStats
-from vllm.v1.spec_decode.metrics import SpecDecodingMetrics
+from vllm.v1.metrics.stats import FinishedRequestStats, IterationStats, SchedulerStats
+from vllm.v1.spec_decode.metrics import SpecDecodingMetrics, FinishedRequestSpecStats
+import json, dataclasses
 
 logger = init_logger(__name__)
 
@@ -40,6 +41,8 @@ class LoggingStatLogger(StatLoggerBase):
         # TODO: Make the interval configurable.
         self.prefix_caching_metrics = PrefixCachingMetrics()
         self.spec_decoding_metrics = SpecDecodingMetrics()
+        self.finished_requests: list[FinishedRequestStats] = []
+        self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
     def _reset(self, now):
         self.last_log_time = now
@@ -47,12 +50,15 @@ class LoggingStatLogger(StatLoggerBase):
         # Tracked stats over current local logging interval.
         self.num_prompt_tokens: list[int] = []
         self.num_generation_tokens: list[int] = []
+        self.finished_requests: list[FinishedRequestStats] = []
+        self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
     def _track_iteration_stats(self, iteration_stats: IterationStats):
         # Save tracked stats for token counters.
         self.num_prompt_tokens.append(iteration_stats.num_prompt_tokens)
         self.num_generation_tokens.append(
             iteration_stats.num_generation_tokens)
+        self.finished_requests.extend(iteration_stats.finished_requests)
 
     def _get_throughput(self, tracked_stats: list[int], now: float) -> float:
         # Compute summary metrics for tracked stats
@@ -70,6 +76,8 @@ class LoggingStatLogger(StatLoggerBase):
         if scheduler_stats.spec_decoding_stats is not None:
             self.spec_decoding_metrics.observe(
                 scheduler_stats.spec_decoding_stats)
+        
+        self.finished_requests_spec_stats.extend(scheduler_stats.finished_requests_spec_stats)
 
         self.last_scheduler_stats = scheduler_stats
 
@@ -78,6 +86,8 @@ class LoggingStatLogger(StatLoggerBase):
         prompt_throughput = self._get_throughput(self.num_prompt_tokens, now)
         generation_throughput = self._get_throughput(
             self.num_generation_tokens, now)
+        finished_requests = json.dumps([dataclasses.asdict(req) for req in self.finished_requests])
+        finished_requests_spec_stats = json.dumps([dataclasses.asdict(req) for req in self.finished_requests_spec_stats])
 
         self._reset(now)
 
@@ -99,6 +109,8 @@ class LoggingStatLogger(StatLoggerBase):
             scheduler_stats.gpu_cache_usage * 100,
             self.prefix_caching_metrics.hit_rate * 100,
         )
+        logger.info("Finished requests: %s", finished_requests)
+        logger.info("Finished requests spec stats: %s", finished_requests_spec_stats)
 
         if scheduler_stats.spec_decoding_stats is not None:
             self.spec_decoding_metrics.log()

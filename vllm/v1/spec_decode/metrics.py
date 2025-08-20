@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -28,6 +28,21 @@ class SpecDecodingStats:
         self.num_draft_tokens += num_draft_tokens
         self.num_accepted_tokens += num_accepted_tokens
 
+@dataclass
+class SpecDecodingReqStats:
+    num_draft_tokens: list[int] = field(default_factory=list)
+    num_accepted_tokens: list[int] = field(default_factory=list)
+    
+
+@dataclass
+class FinishedRequestSpecStats:
+    """Speculation Stats associated with a finished request."""
+
+    request_id: str = ""
+    num_draft_tokens: int = 0
+    num_accepted_tokens: int = 0
+    num_steps: int = 0
+    
 
 class SpecDecodingMetrics:
 
