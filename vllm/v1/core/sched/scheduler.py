@@ -32,7 +32,9 @@ from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.outputs import DraftTokenIds, KVConnectorOutput, ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
-from vllm.v1.spec_decode.metrics import SpecDecodingStats
+from vllm.v1.spec_decode.metrics import (SpecDecodingStats, 
+                                           FinishedRequestSpecStats, 
+                                           SpecDecodingReqStats)
 from vllm.v1.structured_output import StructuredOutputManager
 
 logger = init_logger(__name__)
@@ -131,6 +133,9 @@ class Scheduler(SchedulerInterface):
 
         # KV Connector: requests in process of async KV loading or recving
         self.finished_recving_kv_req_ids: set[str] = set()
+        
+        # Spec decode stats tracking
+        self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
         # Encoder-related.
         # Calculate encoder cache size if applicable
@@ -908,6 +913,12 @@ class Scheduler(SchedulerInterface):
                     spec_decoding_stats,
                     num_draft_tokens=num_draft_tokens,
                     num_accepted_tokens=num_accepted)
+                
+                # Track per-request spec decode stats
+                if request.spec_decoding_stats is None:
+                    request.spec_decoding_stats = SpecDecodingReqStats()
+                request.spec_decoding_stats.num_draft_tokens.append(num_draft_tokens)
+                request.spec_decoding_stats.num_accepted_tokens.append(num_accepted)
 
             stopped = False
             new_logprobs = None
@@ -928,6 +939,9 @@ class Scheduler(SchedulerInterface):
                                      pooler_output)
 
             if stopped:
+                # Track finished request spec stats before freeing
+                if self.log_stats:
+                    self._update_finished_requests_spec_stats(request)
                 kv_transfer_params = self._free_request(request)
                 if status_before_stop == RequestStatus.RUNNING:
                     stopped_running_reqs.add(request)
@@ -1139,6 +1153,9 @@ class Scheduler(SchedulerInterface):
         # Second pass: set status and free requests
         for request in valid_requests:
             request.status = finished_status
+            # Track finished request spec stats before freeing
+            if self.log_stats:
+                self._update_finished_requests_spec_stats(request)
             self._free_request(request)
 
     def _free_request(self, request: Request) -> Optional[dict[str, Any]]:
@@ -1178,6 +1195,8 @@ class Scheduler(SchedulerInterface):
             return None
         prefix_cache_stats = self.kv_cache_manager.make_prefix_cache_stats()
         assert prefix_cache_stats is not None
+        finished_requests_spec_stats = self.finished_requests_spec_stats.copy()
+        self.finished_requests_spec_stats.clear()
         return SchedulerStats(
             num_running_reqs=len(self.running),
             num_waiting_reqs=len(self.waiting),
@@ -1202,6 +1221,20 @@ class Scheduler(SchedulerInterface):
             num_draft_tokens=num_draft_tokens,
             num_accepted_tokens=num_accepted_tokens)
         return spec_decoding_stats
+
+    def _update_finished_requests_spec_stats(self, request: Request) -> None:
+        """Update finished request spec decoding stats."""
+        if request.spec_decoding_stats is not None:
+            assert len(request.spec_decoding_stats.num_draft_tokens) == len(
+                request.spec_decoding_stats.num_accepted_tokens)
+            self.finished_requests_spec_stats.append(
+                FinishedRequestSpecStats(
+                    request_id=request.request_id or "",
+                    num_draft_tokens=sum(request.spec_decoding_stats.num_draft_tokens),
+                    num_accepted_tokens=sum(request.spec_decoding_stats.num_accepted_tokens),
+                    num_steps=len(request.spec_decoding_stats.num_draft_tokens) or 0,
+                )
+            )
 
     def shutdown(self) -> None:
         if self.kv_event_publisher:

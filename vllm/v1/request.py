@@ -14,6 +14,7 @@ from vllm.v1.engine import (EngineCoreEvent, EngineCoreEventType,
                             EngineCoreRequest, FinishReason)
 from vllm.v1.structured_output.request import StructuredOutputRequest
 from vllm.v1.utils import ConstantList
+from vllm.v1.spec_decode.metrics import SpecDecodingReqStats
 
 if TYPE_CHECKING:
     from vllm.lora.request import LoRARequest
@@ -111,6 +112,9 @@ class Request:
         # The number of NaNs in logits. A value greater than 0
         # indicates that the output is corrupted
         self.num_nans_in_logits = 0
+        
+        # Per-request spec decoding stats
+        self.spec_decoding_stats: Optional[SpecDecodingReqStats] = None
 
         self.block_hashes: list[BlockHash] = []
         self.get_hash_new_full_blocks: Optional[Callable[
