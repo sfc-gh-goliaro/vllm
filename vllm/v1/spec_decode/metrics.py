@@ -113,6 +113,22 @@ class SpecDecodingLogging:
         self.reset()
 
 
+@dataclass
+class SpecDecodingReqStats:
+    num_draft_tokens: list[int] = field(default_factory=list)
+    num_accepted_tokens: list[int] = field(default_factory=list)
+
+
+@dataclass
+class FinishedRequestSpecStats:
+    """Speculation Stats associated with a finished request."""
+
+    request_id: str = ""
+    num_draft_tokens: int = 0
+    num_accepted_tokens: int = 0
+    num_steps: int = 0
+
+
 class SpecDecodingProm:
     """Record spec decoding metrics in Prometheus.
 

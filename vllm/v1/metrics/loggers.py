@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import dataclasses
+import json
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -15,8 +17,9 @@ from vllm.logger import init_logger
 from vllm.v1.core.kv_cache_utils import PrefixCachingMetrics
 from vllm.v1.engine import FinishReason
 from vllm.v1.metrics.prometheus import unregister_vllm_metrics
-from vllm.v1.metrics.stats import IterationStats, SchedulerStats
-from vllm.v1.spec_decode.metrics import SpecDecodingLogging, SpecDecodingProm
+from vllm.v1.metrics.stats import FinishedRequestStats, IterationStats, SchedulerStats
+from vllm.v1.spec_decode.metrics import (SpecDecodingLogging, SpecDecodingProm,
+                                          FinishedRequestSpecStats)
 
 logger = init_logger(__name__)
 
@@ -61,6 +64,8 @@ class LoggingStatLogger(StatLoggerBase):
         # TODO: Make the interval configurable.
         self.prefix_caching_metrics = PrefixCachingMetrics()
         self.spec_decoding_logging = SpecDecodingLogging()
+        self.finished_requests: list[FinishedRequestStats] = []
+        self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
         kv_tranfer_config = self.vllm_config.kv_transfer_config
         self.kv_transfer_logging = KVConnectorLogging(kv_tranfer_config)
         self.last_prompt_throughput: float = 0.0
@@ -72,6 +77,10 @@ class LoggingStatLogger(StatLoggerBase):
         # Tracked stats over current local logging interval.
         self.num_prompt_tokens: int = 0
         self.num_generation_tokens: int = 0
+        
+        # Reset finished request lists
+        self.finished_requests: list[FinishedRequestStats] = []
+        self.finished_requests_spec_stats: list[FinishedRequestSpecStats] = []
 
     def _track_iteration_stats(self, iteration_stats: IterationStats):
         # Save tracked stats for token counters.
@@ -93,6 +102,8 @@ class LoggingStatLogger(StatLoggerBase):
 
         if iteration_stats:
             self._track_iteration_stats(iteration_stats)
+            # Track finished requests
+            self.finished_requests.extend(iteration_stats.finished_requests)
 
         if scheduler_stats is not None:
             self.prefix_caching_metrics.observe(
@@ -101,6 +112,10 @@ class LoggingStatLogger(StatLoggerBase):
             if scheduler_stats.spec_decoding_stats is not None:
                 self.spec_decoding_logging.observe(
                     scheduler_stats.spec_decoding_stats)
+
+            if scheduler_stats.finished_requests_spec_stats is not None:
+                self.finished_requests_spec_stats.extend(scheduler_stats.finished_requests_spec_stats)
+
             if kv_connector_stats := scheduler_stats.kv_connector_stats:
                 self.kv_transfer_logging.observe(kv_connector_stats)
             self.last_scheduler_stats = scheduler_stats
@@ -110,6 +125,10 @@ class LoggingStatLogger(StatLoggerBase):
         prompt_throughput = self._get_throughput(self.num_prompt_tokens, now)
         generation_throughput = self._get_throughput(
             self.num_generation_tokens, now)
+
+        # JSON serialize finished request data
+        finished_requests = json.dumps([dataclasses.asdict(req) for req in self.finished_requests])
+        finished_requests_spec_stats = json.dumps([dataclasses.asdict(req) for req in self.finished_requests_spec_stats])
 
         self._reset(now)
 
@@ -140,6 +159,9 @@ class LoggingStatLogger(StatLoggerBase):
             scheduler_stats.kv_cache_usage * 100,
             self.prefix_caching_metrics.hit_rate * 100,
         )
+        logger.info("Finished requests: %s", finished_requests)
+        logger.info("Finished requests spec stats: %s", finished_requests_spec_stats)
+        
         self.spec_decoding_logging.log(log_fn=log_fn)
         self.kv_transfer_logging.log(log_fn=log_fn)
 

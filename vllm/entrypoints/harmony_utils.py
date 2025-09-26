@@ -204,6 +204,21 @@ def parse_response_input(
     return msg
 
 
+def parse_response_output(output: ResponseOutputItem) -> Message:
+    if isinstance(output, ResponseOutputMessage):
+        role = output.role
+        contents = [TextContent(text=c.text) for c in output.content]
+        msg = Message.from_role_and_contents(role, contents)
+        return msg
+    elif isinstance(output, ResponseFunctionToolCall):
+        msg = Message.from_role_and_content(Role.ASSISTANT, output.arguments)
+        msg = msg.with_channel("commentary")
+        msg = msg.with_recipient(output.name)
+        msg = msg.with_content_type("json")
+        return msg
+    else:
+        raise ValueError(f"Unknown output type: {type(output)}")
+
 def parse_chat_input(chat_msg) -> list[Message]:
     if not isinstance(chat_msg, dict):
         # Handle Pydantic models
@@ -418,19 +433,51 @@ def parse_chat_output(
         token_ids: Sequence[int]) -> tuple[Optional[str], Optional[str], bool]:
     parser = parse_output_into_messages(token_ids)
     output_msgs = parser.messages
-    is_tool_call = False  # TODO: update this when tool call is supported
     if len(output_msgs) == 0:
         # The generation has stopped during reasoning.
+        is_tool_call = False
         reasoning_content = parser.current_content
         final_content = None
     elif len(output_msgs) == 1:
         # The generation has stopped during final message.
+        is_tool_call = False
         reasoning_content = output_msgs[0].content[0].text
         final_content = parser.current_content
+    elif len(output_msgs) == 2:
+        reasoning_msg, final_msg = output_msgs
+        reasoning_content = reasoning_msg.content[0].text
+        final_content = final_msg.content[0].text
+        is_tool_call = final_msg.recipient is not None
+    elif len(output_msgs) == 3:
+        # Merge the first and second messages as reasoning_msg
+        reasoning_msg1, reasoning_msg2, final_msg = output_msgs
+        reasoning_content = (
+            (reasoning_msg1.content[0].text if reasoning_msg1.content else "")
+            + (reasoning_msg2.content[0].text if reasoning_msg2.content else "")
+        )
+        final_content = final_msg.content[0].text if final_msg.content else ""
+        is_tool_call = final_msg.recipient is not None
     else:
         reasoning_msg = output_msgs[:-1]
         final_msg = output_msgs[-1]
         reasoning_content = "\n".join(
             [msg.content[0].text for msg in reasoning_msg])
         final_content = final_msg.content[0].text
+        is_tool_call = final_msg.recipient is not None
+
+    if os.environ.get("VLLM_LOGGING_LEVEL") == "DEBUG":
+        print("-"*100)
+        print("OUTPUT TOKENS IDS: ", token_ids)
+        print("OUTPUT TOKENS: ", get_encoding().decode(token_ids))
+        print("FINAL_CONTENT:", final_content)
+        print("REASONING_CONTENT:", reasoning_content)
+        try:
+            print("FINAL_MSG", output_msgs[-1])
+            # print("PARSED_RESPONSE_OUTPUT:", parse_response_output(output))
+            print("PARSED_OUTPUT_MSG: ", parse_output_message(output_msgs[-1]))
+            print("PARSED_RESPONSE:", get_encoding().parse_messages_from_completion_tokens(token_ids, Role.ASSISTANT))
+        except Exception as e:
+            print("ERROR: ", e)
+        print("-"*100)
+    
     return reasoning_content, final_content, is_tool_call

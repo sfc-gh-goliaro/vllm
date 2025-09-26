@@ -8,11 +8,14 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from collections.abc import Sequence as GenericSequence
 from typing import Callable, Final, Optional, Union
 
+import os, copy
+
 import jinja2
 import partial_json_parser
 import regex as re
 from fastapi import Request
 from openai_harmony import Message as OpenAIMessage
+from openai_harmony import Role
 from pydantic import TypeAdapter
 
 from vllm.config import ModelConfig
@@ -24,7 +27,8 @@ from vllm.entrypoints.chat_utils import (ChatTemplateContentFormatOption,
 from vllm.entrypoints.harmony_utils import (
     get_developer_message, get_stop_tokens_for_assistant_actions,
     get_streamable_parser_for_assistant, get_system_message, parse_chat_input,
-    parse_chat_output, render_for_completion)
+    parse_chat_output, render_for_completion, get_encoding, parse_response_output,
+    parse_output_message, parse_output_into_messages)
 from vllm.entrypoints.logger import RequestLogger
 from vllm.entrypoints.openai.protocol import (
     ChatCompletionLogProb, ChatCompletionLogProbs,
@@ -246,6 +250,12 @@ class OpenAIServingChat(OpenAIServing):
                     request_prompts,
                     engine_prompts,
                 ) = self._make_request_with_harmony(request)
+                if os.environ.get("VLLM_LOGGING_LEVEL") == "DEBUG":
+                    req2=copy.deepcopy(request)
+                    req2.messages = []
+                    print("PROMPT TOKEN IDS:", request_prompts[0])
+                    print("PROMPT: ", get_encoding().decode(request_prompts[0]))
+                    print("REQUEST: ", req2.model_dump_json(indent=2))
         except (ValueError, TypeError, RuntimeError,
                 jinja2.TemplateError) as e:
             logger.exception("Error in preprocessing prompt inputs")
@@ -1563,19 +1573,29 @@ class OpenAIServingChat(OpenAIServing):
         # if the model supports it. TODO: Support browsing.
         assert not self.supports_browsing
         assert not self.supports_code_interpreter
+        reasoning_effort = request.reasoning_effort or "high" # for swebench
         sys_msg = get_system_message(
-            reasoning_effort=request.reasoning_effort,
+            reasoning_effort=reasoning_effort,
             browser_description=None,
             python_description=None)
         messages.append(sys_msg)
 
+        # Get developer prompt from the user.
+        instructions = None
+        for chat_msg in request.messages:
+            if chat_msg['role'] == 'system' or chat_msg['role'] == "developer":
+                instructions = chat_msg['content']
+                break
+
         # Add developer message.
-        dev_msg = get_developer_message(tools=request.tools)
+        dev_msg = get_developer_message(instructions=instructions, tools=request.tools)
         messages.append(dev_msg)
 
         # Add user message.
         for chat_msg in request.messages:
-            messages.extend(parse_chat_input(chat_msg))
+            if chat_msg['role'] == 'system' or chat_msg['role'] == "developer":
+                continue
+            messages.append(parse_chat_input(chat_msg))
 
         # Render prompt token ids.
         prompt_token_ids = render_for_completion(messages)
