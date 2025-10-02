@@ -1203,6 +1203,7 @@ class Scheduler(SchedulerInterface):
             kv_cache_usage=self.kv_cache_manager.usage,
             prefix_cache_stats=prefix_cache_stats,
             spec_decoding_stats=spec_decoding_stats,
+            finished_requests_spec_stats=finished_requests_spec_stats,
             num_corrupted_reqs=sum(req.is_output_corrupted
                                    for req in self.running),
         )
