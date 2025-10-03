@@ -250,12 +250,12 @@ class OpenAIServingChat(OpenAIServing):
                     request_prompts,
                     engine_prompts,
                 ) = self._make_request_with_harmony(request)
-                if os.environ.get("VLLM_LOGGING_LEVEL") == "DEBUG":
-                    req2=copy.deepcopy(request)
-                    req2.messages = []
-                    print("PROMPT TOKEN IDS:", request_prompts[0])
-                    print("PROMPT: ", get_encoding().decode(request_prompts[0]))
-                    print("REQUEST: ", req2.model_dump_json(indent=2))
+                # if os.environ.get("VLLM_LOGGING_LEVEL") == "DEBUG":
+                #     req2=copy.deepcopy(request)
+                #     req2.messages = []
+                #     print("PROMPT TOKEN IDS:", request_prompts[0])
+                #     print("PROMPT: ", get_encoding().decode(request_prompts[0]))
+                #     print("REQUEST: ", req2.model_dump_json(indent=2))
         except (ValueError, TypeError, RuntimeError,
                 jinja2.TemplateError) as e:
             logger.exception("Error in preprocessing prompt inputs")
@@ -1598,9 +1598,13 @@ class OpenAIServingChat(OpenAIServing):
         for chat_msg in request.messages:
             if chat_msg['role'] == 'system' or chat_msg['role'] == "developer":
                 continue
-            messages.append(parse_chat_input(chat_msg))
+            messages.extend(parse_chat_input(chat_msg))
 
         # Render prompt token ids.
+        # print("ABOUT TO RENDER FOR COMPLETION")
+        # print(messages)
+        # print("type(messages)", type(messages))
+        # print("each message's type:", [type(msg) for msg in messages])
         prompt_token_ids = render_for_completion(messages)
         engine_prompt = EngineTokensPrompt(prompt_token_ids=prompt_token_ids)
 

@@ -460,19 +460,19 @@ def parse_chat_output(
         final_content = final_msg.content[0].text
         is_tool_call = final_msg.recipient is not None
 
-    if os.environ.get("VLLM_LOGGING_LEVEL") == "DEBUG":
-        print("-"*100)
-        print("OUTPUT TOKENS IDS: ", token_ids)
-        print("OUTPUT TOKENS: ", get_encoding().decode(token_ids))
-        print("FINAL_CONTENT:", final_content)
-        print("REASONING_CONTENT:", reasoning_content)
-        try:
-            print("FINAL_MSG", output_msgs[-1])
-            # print("PARSED_RESPONSE_OUTPUT:", parse_response_output(output))
-            print("PARSED_OUTPUT_MSG: ", parse_output_message(output_msgs[-1]))
-            print("PARSED_RESPONSE:", get_encoding().parse_messages_from_completion_tokens(token_ids, Role.ASSISTANT))
-        except Exception as e:
-            print("ERROR: ", e)
-        print("-"*100)
+    # if os.environ.get("VLLM_LOGGING_LEVEL") == "DEBUG":
+    #     print("-"*100)
+    #     print("OUTPUT TOKENS IDS: ", token_ids)
+    #     print("OUTPUT TOKENS: ", get_encoding().decode(token_ids))
+    #     print("FINAL_CONTENT:", final_content)
+    #     print("REASONING_CONTENT:", reasoning_content)
+    #     try:
+    #         print("FINAL_MSG", output_msgs[-1])
+    #         # print("PARSED_RESPONSE_OUTPUT:", parse_response_output(output))
+    #         print("PARSED_OUTPUT_MSG: ", parse_output_message(output_msgs[-1]))
+    #         print("PARSED_RESPONSE:", get_encoding().parse_messages_from_completion_tokens(token_ids, Role.ASSISTANT))
+    #     except Exception as e:
+    #         print("ERROR: ", e)
+    #     print("-"*100)
     
     return reasoning_content, final_content, is_tool_call
